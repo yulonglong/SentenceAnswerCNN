@@ -21,13 +21,13 @@ parser.add_argument("-o", "--out-dir", dest="out_dir_path", type=str, metavar='<
 parser.add_argument("-t", "--model-type", dest="model_type", type=str, metavar='<str>', default='cnnmeanp', help="Model type (cnnmeanp) (default=cnnmeanp)")
 parser.add_argument("-u", "--rec-unit", dest="recurrent_unit", type=str, metavar='<str>', default='lstm', help="Recurrent unit type (lstm|gru|simple) (default=lstm)")
 parser.add_argument("-a", "--algorithm", dest="algorithm", type=str, metavar='<str>', default='rmsprop', help="Optimization algorithm (rmsprop|sgd|adagrad|adadelta|adam|adamax) (default=rmsprop)")
-parser.add_argument("-e", "--embdim", dest="emb_dim", type=int, metavar='<int>', default=300, help="Embeddings dimension (default=300)")
-parser.add_argument("-c", "--cnndim", dest="cnn_dim", type=int, metavar='<int>', default=500, help="CNN output dimension. '0' means no CNN layer (default=0)")
+parser.add_argument("-e", "--embdim", dest="emb_dim", type=int, metavar='<int>', default=50, help="Embeddings dimension (default=300)")
+parser.add_argument("-c", "--cnndim", dest="cnn_dim", type=int, metavar='<int>', default=300, help="CNN output dimension. '0' means no CNN layer (default=0)")
 parser.add_argument("-w", "--cnnwin", dest="cnn_window_size", type=int, metavar='<int>', default=2, help="CNN window size. (default=2)")
 parser.add_argument("-r", "--rnndim", dest="rnn_dim", type=int, metavar='<int>', default=0, help="RNN dimension. '0' means no RNN layer (default=0)")
 parser.add_argument("-b", "--batch-size", dest="batch_size", type=int, metavar='<int>', default=32, help="Batch size for training (default=32)")
 parser.add_argument("-be", "--batch-size-eval", dest="batch_size_eval", type=int, metavar='<int>', default=256, help="Batch size for evaluation (default=256)")
-parser.add_argument("-v", "--vocab-size", dest="vocab_size", type=int, metavar='<int>', default=4000, help="Vocab size (default=4000)")
+parser.add_argument("-v", "--vocab-size", dest="vocab_size", type=int, metavar='<int>', default=30000, help="Vocab size (default=30000)")
 parser.add_argument("--coef", dest="activation_coef", type=float, metavar='<int>', default=1.0, help="The last layers sharpness coefficient (default=1.0)")
 parser.add_argument("--vocab-path", dest="vocab_path", type=str, metavar='<str>', help="(Optional) The path to the existing vocab file (*.pkl)")
 parser.add_argument("--skip-init-bias", dest="skip_init_bias", action='store_true', help="Skip initialization of the last layer bias")
@@ -111,8 +111,8 @@ from Evaluator import Evaluator
 ## Prepare data
 #
 # data_x is a list of lists
-(train_x, train_y), (dev_x, dev_y), (test_x, test_y), vocab, vocab_size, overal_maxlen = asap.get_data(
-	(train_path, dev_path, test_path), vocab_size, maxlen, tokenize_text=True, to_lower=True, sort_by_len=False, vocab_path=vocab_path)
+(train_qn_x, train_ans_x, train_y), (dev_qn_x, dev_ans_x, dev_y), (test_qn_x, test_ans_x, test_y), vocab, vocab_size, overal_maxlen = asap.get_data(
+	(train_path, dev_path, test_path), vocab_size, maxlen, tokenize_text=False, to_lower=True, sort_by_len=False, vocab_path=vocab_path)
 
 # Dump vocab
 with open(out_dir + '/vocab.pkl', 'wb') as vocab_file:
@@ -120,13 +120,12 @@ with open(out_dir + '/vocab.pkl', 'wb') as vocab_file:
 
 # Pad sequences for mini-batch processing
 if model_type in {'cnnmeanp'}:
-	train_x = sequence.pad_sequences(train_x, maxlen=overal_maxlen)
-	dev_x = sequence.pad_sequences(dev_x, maxlen=overal_maxlen)
-	test_x = sequence.pad_sequences(test_x, maxlen=overal_maxlen)
-else:
-	train_x = sequence.pad_sequences(train_x)
-	dev_x = sequence.pad_sequences(dev_x)
-	test_x = sequence.pad_sequences(test_x)
+	train_qn_x = sequence.pad_sequences(train_qn_x, maxlen=overal_maxlen)
+	train_ans_x = sequence.pad_sequences(train_ans_x, maxlen=overal_maxlen)
+	dev_qn_x = sequence.pad_sequences(dev_qn_x, maxlen=overal_maxlen)
+	dev_ans_x = sequence.pad_sequences(dev_ans_x, maxlen=overal_maxlen)
+	test_qn_x = sequence.pad_sequences(test_qn_x, maxlen=overal_maxlen)
+	test_ans_x = sequence.pad_sequences(test_ans_x, maxlen=overal_maxlen)
 
 ###############################################################################################################################
 ## Some statistics
@@ -149,9 +148,13 @@ test_std = test_y.std()
 
 logger.info('Statistics:')
 
-logger.info('  train_x shape: ' + str(np.array(train_x).shape))
-logger.info('  dev_x shape:   ' + str(np.array(dev_x).shape))
-logger.info('  test_x shape:  ' + str(np.array(test_x).shape))
+logger.info('  train_qn_x shape: ' + str(np.array(train_qn_x).shape))
+logger.info('  dev_qn_x shape:   ' + str(np.array(dev_qn_x).shape))
+logger.info('  test_qn_x shape:  ' + str(np.array(test_qn_x).shape))
+
+logger.info('  train_ans_x shape: ' + str(np.array(train_ans_x).shape))
+logger.info('  dev_ans_x shape:   ' + str(np.array(dev_ans_x).shape))
+logger.info('  test_ans_x shape:  ' + str(np.array(test_ans_x).shape))
 
 logger.info('  train_y shape: ' + str(train_y.shape))
 logger.info('  dev_y shape:   ' + str(dev_y.shape))
@@ -201,29 +204,43 @@ elif recurrent_unit == 'simple':
 ## Building model
 #
 
-model = Sequential()
 if model_type == 'cnnmeanp':
-	logger.info('Building a CNN model')
+	logger.info('Building a CNN model with MeanOverTime (Mean Pooling)')
 	from keras.layers import Dense, Dropout, Embedding, LSTM, Input, merge
 	
 	cnn_border_mode='same'
 	
-	sequence = Input(shape=(overal_maxlen,), dtype='int32')
-	output = Embedding(vocab_size, emb_dim, mask_zero=True)(sequence)
-	if cnn_dim > 0:
-		output = Conv1DWithMasking(nb_filter=cnn_dim, filter_length=cnn_window_size, border_mode=cnn_border_mode, subsample_length=1)(output)
-	
-	output_mean = MeanOverTime(mask_zero=True)(output)
-	densed = Dense(1)(output_mean)
-	score = Activation('sigmoid')(densed)
-	model = Model(input=sequence, output=score)
-	model.emb_index = 1
+	sequenceQn = Input(shape=(overal_maxlen,), dtype='int32')
+	sequenceAns = Input(shape=(overal_maxlen,), dtype='int32')
+	outputQn = Embedding(vocab_size, emb_dim, mask_zero=True, name='QnEmbedding')(sequenceQn)
+	outputAns = Embedding(vocab_size, emb_dim, mask_zero=True, name='AnsEmbedding')(sequenceAns)
 
-# Initialize embeddings if requested
-if emb_path:
-	logger.info('Initializing lookup table')
-	emb_reader = EmbReader(emb_path, emb_dim=emb_dim)
-	model.layers[model.emb_index].W.set_value(emb_reader.get_emb_matrix_given_vocab(vocab, model.layers[model.emb_index].W.get_value()))
+	if cnn_dim > 0:
+		outputQn = Conv1DWithMasking(nb_filter=cnn_dim, filter_length=cnn_window_size, border_mode=cnn_border_mode, subsample_length=1)(outputQn)
+		outputAns = Conv1DWithMasking(nb_filter=cnn_dim, filter_length=cnn_window_size, border_mode=cnn_border_mode, subsample_length=1)(outputAns)
+	
+	outputMeanQn = MeanOverTime(mask_zero=True)(outputQn)
+	outputMeanAns = MeanOverTime(mask_zero=True)(outputAns)
+	
+	merged = merge([outputMeanQn, outputMeanAns], mode='concat', concat_axis=-1)
+
+	densed = Dense(1)(merged)
+	score = Activation('sigmoid')(densed)
+	model = Model(input=[sequenceQn,sequenceAns], output=score)
+	
+	# get the WordEmbedding layer index
+	model.emb_index = 0
+	model_layer_index = 0
+	for test in model.layers:
+		if (test.name == 'QnEmbedding' or test.name == 'AnsEmbedding'):
+			model.emb_index = model_layer_index
+			# Initialize embeddings if requested
+			if emb_path:
+				logger.info('Initializing lookup table')
+				emb_reader = EmbReader(emb_path, emb_dim=emb_dim)
+				model.layers[model.emb_index].W.set_value(emb_reader.get_emb_matrix_given_vocab(vocab, model.layers[model.emb_index].W.get_value()))
+			
+		model_layer_index += 1	
 
 
 model.compile(loss=loss, optimizer=optimizer, metrics=[metric])
@@ -247,7 +264,7 @@ logger.info('-------------------------------------------------------------------
 #
 
 logger.info('Initial Evaluation:')
-evl = Evaluator(logger, out_dir, (train_x, train_y), (dev_x, dev_y) , (test_x, test_y), model_type, batch_size_eval=batch_size_eval, print_info=True)
+evl = Evaluator(logger, out_dir, (train_qn_x, train_ans_x, train_y), (dev_qn_x, dev_ans_x, dev_y) , (test_qn_x, test_ans_x, test_y), model_type, batch_size_eval=batch_size_eval, print_info=True)
 evl.evaluate(model, -1)
 
 evl.print_info()
@@ -257,7 +274,7 @@ total_eval_time = 0
 
 for ii in range(nb_epoch):
 	# Training
-	train_input = train_x
+	train_input = [train_qn_x, train_ans_x]
 
 	t0 = time()
 	# this model.fit function is the neuralnet training

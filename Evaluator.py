@@ -15,9 +15,9 @@ class Evaluator():
 		self.model_type = model_type
 		self.batch_size_eval = batch_size_eval
 
-		self.train_x, self.train_y = train[0], train[1]
-		self.dev_x, self.dev_y = dev[0], dev[1]
-		self.test_x, self.test_y = test[0], test[1]
+		self.train_qn_x, self.train_ans_x, self.train_y = train[0], train[1], train[2]
+		self.dev_qn_x, self.dev_ans_x, self.dev_y = dev[0], dev[1], dev[2]
+		self.test_qn_x, self.test_ans_x, self.test_y = test[0], test[1], test[2]
 		self.dev_mean = self.dev_y.mean()
 		self.dev_std = self.dev_y.std()
 		self.test_mean = self.test_y.mean()
@@ -45,12 +45,12 @@ class Evaluator():
 		np.savetxt(self.out_dir + '/preds/test_pred_' + str(epoch) + '.txt', test_pred, fmt='%.8f')
 	
 	def evaluate(self, model, epoch):
-		self.dev_loss, self.dev_metric = model.evaluate(self.dev_x, self.dev_y, batch_size=self.batch_size_eval, verbose=0)
-		self.test_loss, self.test_metric = model.evaluate(self.test_x, self.test_y, batch_size=self.batch_size_eval, verbose=0)
+		self.dev_loss, self.dev_metric = model.evaluate([self.dev_qn_x, self.dev_ans_x], self.dev_y, batch_size=self.batch_size_eval, verbose=0)
+		self.test_loss, self.test_metric = model.evaluate([self.test_qn_x, self.test_ans_x], self.test_y, batch_size=self.batch_size_eval, verbose=0)
 		
-		self.train_pred = model.predict(self.train_x, batch_size=self.batch_size_eval).squeeze()
-		self.dev_pred = model.predict(self.dev_x, batch_size=self.batch_size_eval).squeeze()
-		self.test_pred = model.predict(self.test_x, batch_size=self.batch_size_eval).squeeze()
+		self.train_pred = model.predict([self.train_qn_x, self.train_ans_x], batch_size=self.batch_size_eval).squeeze()
+		self.dev_pred = model.predict([self.dev_qn_x, self.dev_ans_x], batch_size=self.batch_size_eval).squeeze()
+		self.test_pred = model.predict([self.test_qn_x, self.test_ans_x], batch_size=self.batch_size_eval).squeeze()
 
 		self.dump_predictions(self.train_pred, self.dev_pred, self.test_pred, epoch)
 

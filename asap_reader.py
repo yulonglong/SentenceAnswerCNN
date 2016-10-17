@@ -78,7 +78,7 @@ def read_dataset(file_path, maxlen, vocab, tokenize_text, to_lower, score_index=
 	logger.info('Reading dataset from: ' + file_path)
 	if maxlen > 0:
 		logger.info('  Removing sequences with more than ' + str(maxlen) + ' words')
-	data_x, data_y = [], []
+	data_qn_x, data_ans_x, data_y = [], [], []
 	num_hit, unk_hit, total = 0., 0., 0.
 	maxlen_x = -1
 	with codecs.open(file_path, mode='r', encoding='UTF8') as input_file:
@@ -87,40 +87,57 @@ def read_dataset(file_path, maxlen, vocab, tokenize_text, to_lower, score_index=
 			tokens = line.strip().split('\t')
 			question = tokens[0].strip()
 			answer = tokens[1].strip()
-			content = question + " " + answer
 			score = int(tokens[2])
 		
 			if to_lower:
-				content = content.lower()
-			if char_level:
-				content = list(content)
+				question = question.lower()
+				answer = answer.lower()
+			if tokenize_text:
+				question = tokenize(question)
+				answer = tokenize(answer)
 			else:
-				if tokenize_text:
-					content = tokenize(content)
-				else:
-					content = content.split()
-			if maxlen > 0 and len(content) > maxlen:
+				question = question.split()
+				answer = answer.split()
+
+			if maxlen > 0 and len(answer) > maxlen and len(question) > maxlen:
 				continue
-			indices = []
-			if char_level:
-				pass
-			else:
-				for word in content:
-					if is_number(word):
-						indices.append(vocab['<num>'])
-						num_hit += 1
-					elif word in vocab:
-						indices.append(vocab[word])
-					else:
-						indices.append(vocab['<unk>'])
-						unk_hit += 1
-					total += 1
-			data_x.append(indices)
+
+			indices_qn = []
+			indices_ans = []
+
+			for word in question:
+				if is_number(word):
+					indices_qn.append(vocab['<num>'])
+					num_hit += 1
+				elif word in vocab:
+					indices_qn.append(vocab[word])
+				else:
+					indices_qn.append(vocab['<unk>'])
+					unk_hit += 1
+				total += 1
+
+			for word in answer:
+				if is_number(word):
+					indices_ans.append(vocab['<num>'])
+					num_hit += 1
+				elif word in vocab:
+					indices_ans.append(vocab[word])
+				else:
+					indices_ans.append(vocab['<unk>'])
+					unk_hit += 1
+				total += 1
+
+			data_qn_x.append(indices_qn)
+			data_ans_x.append(indices_ans)
 			data_y.append(score)
-			if maxlen_x < len(indices):
-				maxlen_x = len(indices)
+			if maxlen_x < len(indices_qn):
+				maxlen_x = len(indices_qn)
+			if maxlen_x < len(indices_ans):
+				maxlen_x = len(indices_ans)
+
 	logger.info('  <num> hit rate: %.2f%%, <unk> hit rate: %.2f%%' % (100*num_hit/total, 100*unk_hit/total))
-	return data_x, data_y, maxlen_x
+	
+	return data_qn_x, data_ans_x, data_y, maxlen_x
 
 def get_data(paths, vocab_size, maxlen, tokenize_text=True, to_lower=True, sort_by_len=False, vocab_path=None, score_index=6):
 	train_path, dev_path, test_path = paths[0], paths[1], paths[2]
@@ -137,9 +154,9 @@ def get_data(paths, vocab_size, maxlen, tokenize_text=True, to_lower=True, sort_
 			logger.warning('The vocabulary includes %i words which is different from given: %i' % (len(vocab), vocab_size))
 	logger.info('  Vocab size: %i' % (len(vocab)))
 	
-	train_x, train_y, train_maxlen = read_dataset(train_path, maxlen, vocab, tokenize_text, to_lower)
-	dev_x, dev_y, dev_maxlen = read_dataset(dev_path, 0, vocab, tokenize_text, to_lower)
-	test_x, test_y, test_maxlen = read_dataset(test_path, 0, vocab, tokenize_text, to_lower)
+	train_qn_x, train_ans_x, train_y, train_maxlen = read_dataset(train_path, maxlen, vocab, tokenize_text, to_lower)
+	dev_qn_x, dev_ans_x, dev_y, dev_maxlen = read_dataset(dev_path, 0, vocab, tokenize_text, to_lower)
+	test_qn_x, test_ans_x, test_y, test_maxlen = read_dataset(test_path, 0, vocab, tokenize_text, to_lower)
 	
 	overal_maxlen = max(train_maxlen, dev_maxlen, test_maxlen)
 	
@@ -163,4 +180,4 @@ def get_data(paths, vocab_size, maxlen, tokenize_text=True, to_lower=True, sort_
 		train_set_x = [train_set_x[i] for i in sorted_index]
 		train_set_y = [train_set_y[i] for i in sorted_index]
 	
-	return ((train_x,train_y), (dev_x,dev_y), (test_x,test_y), vocab, len(vocab), overal_maxlen)
+	return ((train_qn_x,train_ans_x,train_y), (dev_qn_x,dev_ans_x,dev_y), (test_qn_x,test_ans_x,test_y), vocab, len(vocab), overal_maxlen)
