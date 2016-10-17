@@ -119,7 +119,7 @@ with open(out_dir + '/vocab.pkl', 'wb') as vocab_file:
 	pk.dump(vocab, vocab_file)
 
 # Pad sequences for mini-batch processing
-if model_type in {'cnn'}:
+if model_type in {'cnnmeanp'}:
 	train_x = sequence.pad_sequences(train_x, maxlen=overal_maxlen)
 	dev_x = sequence.pad_sequences(dev_x, maxlen=overal_maxlen)
 	test_x = sequence.pad_sequences(test_x, maxlen=overal_maxlen)
