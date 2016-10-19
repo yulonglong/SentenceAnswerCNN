@@ -45,12 +45,22 @@ class Evaluator():
 		np.savetxt(self.out_dir + '/preds/test_pred_' + str(epoch) + '.txt', test_pred, fmt='%.8f')
 	
 	def evaluate(self, model, epoch):
-		self.dev_loss, self.dev_metric = model.evaluate([self.dev_qn_x, self.dev_ans_x], self.dev_y, batch_size=self.batch_size_eval, verbose=0)
-		self.test_loss, self.test_metric = model.evaluate([self.test_qn_x, self.test_ans_x], self.test_y, batch_size=self.batch_size_eval, verbose=0)
+		train_input_x = [self.train_qn_x, self.train_ans_x]
+		dev_input_x = [self.dev_qn_x, self.dev_ans_x]
+		test_input_x = [self.test_qn_x, self.test_ans_x]
+
+		if self.model_type == 'cnnwang2016':
+			train_input_x = [self.train_qn_x, self.train_qn_x, self.train_ans_x, self.train_ans_x]
+			dev_input_x = [self.dev_qn_x, self.dev_qn_x, self.dev_ans_x, self.dev_ans_x]
+			test_input_x = [self.test_qn_x, self.test_qn_x, self.test_ans_x, self.test_ans_x]
+
+
+		self.dev_loss, self.dev_metric = model.evaluate(dev_input_x, self.dev_y, batch_size=self.batch_size_eval, verbose=0)
+		self.test_loss, self.test_metric = model.evaluate(test_input_x, self.test_y, batch_size=self.batch_size_eval, verbose=0)
 		
-		self.train_pred = model.predict([self.train_qn_x, self.train_ans_x], batch_size=self.batch_size_eval).squeeze()
-		self.dev_pred = model.predict([self.dev_qn_x, self.dev_ans_x], batch_size=self.batch_size_eval).squeeze()
-		self.test_pred = model.predict([self.test_qn_x, self.test_ans_x], batch_size=self.batch_size_eval).squeeze()
+		self.train_pred = model.predict(train_input_x, batch_size=self.batch_size_eval).squeeze()
+		self.dev_pred = model.predict(dev_input_x, batch_size=self.batch_size_eval).squeeze()
+		self.test_pred = model.predict(test_input_x, batch_size=self.batch_size_eval).squeeze()
 
 		self.dump_predictions(self.train_pred, self.dev_pred, self.test_pred, epoch)
 

@@ -18,7 +18,7 @@ parser.add_argument("-tr", "--train", dest="train_path", type=str, metavar='<str
 parser.add_argument("-tu", "--tune", dest="dev_path", type=str, metavar='<str>', required=True, help="The path to the development set")
 parser.add_argument("-ts", "--test", dest="test_path", type=str, metavar='<str>', required=True, help="The path to the test set")
 parser.add_argument("-o", "--out-dir", dest="out_dir_path", type=str, metavar='<str>', required=True, help="The path to the output directory")
-parser.add_argument("-t", "--model-type", dest="model_type", type=str, metavar='<str>', default='cnnmeanp', help="Model type (cnnmeanp) (default=cnnmeanp)")
+parser.add_argument("-t", "--model-type", dest="model_type", type=str, metavar='<str>', default='cnnmeanp', help="Model type (cnnmeanp) (default=cnnmeanp|cnnwang2016)")
 parser.add_argument("-u", "--rec-unit", dest="recurrent_unit", type=str, metavar='<str>', default='lstm', help="Recurrent unit type (lstm|gru|simple) (default=lstm)")
 parser.add_argument("-a", "--algorithm", dest="algorithm", type=str, metavar='<str>', default='rmsprop', help="Optimization algorithm (rmsprop|sgd|adagrad|adadelta|adam|adamax) (default=rmsprop)")
 parser.add_argument("-e", "--embdim", dest="emb_dim", type=int, metavar='<int>', default=50, help="Embeddings dimension (default=300)")
@@ -75,7 +75,8 @@ U.set_logger(out_dir)
 U.print_args(args)
 
 valid_model_type = {
-	'cnnmeanp'
+	'cnnmeanp',
+	'cnnwang2016'
 }
 
 assert model_type in valid_model_type
@@ -119,13 +120,13 @@ with open(out_dir + '/vocab.pkl', 'wb') as vocab_file:
 	pk.dump(vocab, vocab_file)
 
 # Pad sequences for mini-batch processing
-if model_type in {'cnnmeanp'}:
-	train_qn_x = sequence.pad_sequences(train_qn_x, maxlen=overal_maxlen)
-	train_ans_x = sequence.pad_sequences(train_ans_x, maxlen=overal_maxlen)
-	dev_qn_x = sequence.pad_sequences(dev_qn_x, maxlen=overal_maxlen)
-	dev_ans_x = sequence.pad_sequences(dev_ans_x, maxlen=overal_maxlen)
-	test_qn_x = sequence.pad_sequences(test_qn_x, maxlen=overal_maxlen)
-	test_ans_x = sequence.pad_sequences(test_ans_x, maxlen=overal_maxlen)
+
+train_qn_x = sequence.pad_sequences(train_qn_x, maxlen=overal_maxlen)
+train_ans_x = sequence.pad_sequences(train_ans_x, maxlen=overal_maxlen)
+dev_qn_x = sequence.pad_sequences(dev_qn_x, maxlen=overal_maxlen)
+dev_ans_x = sequence.pad_sequences(dev_ans_x, maxlen=overal_maxlen)
+test_qn_x = sequence.pad_sequences(test_qn_x, maxlen=overal_maxlen)
+test_ans_x = sequence.pad_sequences(test_ans_x, maxlen=overal_maxlen)
 
 ###############################################################################################################################
 ## Some statistics
@@ -242,6 +243,69 @@ if model_type == 'cnnmeanp':
 			
 		model_layer_index += 1	
 
+if model_type == 'cnnwang2016':
+	logger.info('Building a CNN model (Zhiguo Wang, 2016) with S+,S-,T+,T- as input, and MaxPooling)')
+	from keras.layers import Dense, Dropout, Embedding, LSTM, Input, merge, pooling
+
+	assert cnn_dim > 0
+	
+	cnn_border_mode='same'
+	
+	sequenceSplus = Input(shape=(overal_maxlen,), dtype='int32')
+	outputSplus = Embedding(vocab_size, emb_dim, mask_zero=True, name='SplusEmbedding')(sequenceSplus)
+	convSplus1 = Conv1DWithMasking(nb_filter=cnn_dim, filter_length=1, border_mode=cnn_border_mode, subsample_length=1)(outputSplus)
+	convSplus2 = Conv1DWithMasking(nb_filter=cnn_dim, filter_length=2, border_mode=cnn_border_mode, subsample_length=1)(outputSplus)
+	convSplus3 = Conv1DWithMasking(nb_filter=cnn_dim, filter_length=3, border_mode=cnn_border_mode, subsample_length=1)(outputSplus)
+
+	sequenceSminus = Input(shape=(overal_maxlen,), dtype='int32')
+	outputSminus = Embedding(vocab_size, emb_dim, mask_zero=True, name='SminusEmbedding')(sequenceSminus)
+	convSminus1 = Conv1DWithMasking(nb_filter=cnn_dim, filter_length=1, border_mode=cnn_border_mode, subsample_length=1)(outputSminus)
+	convSminus2 = Conv1DWithMasking(nb_filter=cnn_dim, filter_length=2, border_mode=cnn_border_mode, subsample_length=1)(outputSminus)
+	convSminus3 = Conv1DWithMasking(nb_filter=cnn_dim, filter_length=3, border_mode=cnn_border_mode, subsample_length=1)(outputSminus)
+
+	sequenceTplus = Input(shape=(overal_maxlen,), dtype='int32')
+	outputTplus = Embedding(vocab_size, emb_dim, mask_zero=True, name='TplusEmbedding')(sequenceTplus)
+	convTplus1 = Conv1DWithMasking(nb_filter=cnn_dim, filter_length=1, border_mode=cnn_border_mode, subsample_length=1)(outputTplus)
+	convTplus2 = Conv1DWithMasking(nb_filter=cnn_dim, filter_length=2, border_mode=cnn_border_mode, subsample_length=1)(outputTplus)
+	convTplus3 = Conv1DWithMasking(nb_filter=cnn_dim, filter_length=3, border_mode=cnn_border_mode, subsample_length=1)(outputTplus)
+
+	sequenceTminus = Input(shape=(overal_maxlen,), dtype='int32')
+	outputTminus = Embedding(vocab_size, emb_dim, mask_zero=True, name='TminusEmbedding')(sequenceTminus)
+	convTminus1 = Conv1DWithMasking(nb_filter=cnn_dim, filter_length=1, border_mode=cnn_border_mode, subsample_length=1)(outputTminus)
+	convTminus2 = Conv1DWithMasking(nb_filter=cnn_dim, filter_length=2, border_mode=cnn_border_mode, subsample_length=1)(outputTminus)
+	convTminus3 = Conv1DWithMasking(nb_filter=cnn_dim, filter_length=3, border_mode=cnn_border_mode, subsample_length=1)(outputTminus)
+
+	mergedS1 = merge([convSplus1, convSminus1], mode='sum', concat_axis=-1)
+	mergedS2 = merge([convSplus2, convSminus2], mode='sum', concat_axis=-1)
+	mergedS3 = merge([convSplus3, convSminus3], mode='sum', concat_axis=-1)
+	mergedS  = merge([mergedS1, mergedS2, mergedS3], mode='concat', concat_axis=-1)
+	mergedStanh = Activation('tanh')(mergedS)
+	maxPoolS = MeanOverTime()(mergedStanh) # PLEASE REMEMBER TO CHANGE THIS TO MAX POOLING
+
+	mergedT1 = merge([convTplus1, convTminus1], mode='sum', concat_axis=-1)
+	mergedT2 = merge([convTplus2, convTminus2], mode='sum', concat_axis=-1)
+	mergedT3 = merge([convTplus3, convTminus3], mode='sum', concat_axis=-1)
+	mergedT  = merge([mergedT1, mergedT2, mergedT3], mode='concat', concat_axis=-1)
+	mergedTtanh = Activation('tanh')(mergedT)
+	maxPoolT = MeanOverTime()(mergedTtanh) # PLEASE REMEMBER TO CHANGE THIS TO MAX POOLING
+
+	combinedOutput = merge([maxPoolS, maxPoolT], mode='concat', concat_axis=-1)
+	densed = Dense(1)(combinedOutput)
+	score = Activation('sigmoid')(densed)
+
+	model = Model(input=[sequenceSplus,sequenceSminus,sequenceTplus,sequenceTminus], output=score)
+	
+	# get the WordEmbedding layer index
+	if emb_path:
+		logger.info('Initializing lookup table')
+		emb_reader = EmbReader(emb_path, emb_dim=emb_dim)
+
+		model_layer_index = 0
+		for test in model.layers:
+			if (test.name == 'SplusEmbedding' or test.name == 'SminusEmbedding' or test.name == 'TplusEmbedding' or test.name == 'TminusEmbedding'):
+				model.layers[model_layer_index].W.set_value(emb_reader.get_emb_matrix_given_vocab(vocab, model.layers[model_layer_index].W.get_value()))
+			model_layer_index += 1	
+
 
 model.compile(loss=loss, optimizer=optimizer, metrics=[metric])
 
@@ -275,6 +339,8 @@ total_eval_time = 0
 for ii in range(nb_epoch):
 	# Training
 	train_input = [train_qn_x, train_ans_x]
+	if model_type == 'cnnwang2016':
+		train_input = [train_qn_x, train_qn_x, train_ans_x, train_ans_x]
 
 	t0 = time()
 	# this model.fit function is the neuralnet training
